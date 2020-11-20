@@ -61,8 +61,13 @@ class image_converter:
         # Obtain the moments of the binary image
         M = cv2.moments(mask)
         # Calculate pixel coordinates for the centre of the blob
-        cx = int(M['m10'] / M['m00'])
-        cy = int(M['m01'] / M['m00'])
+        if M['m00'] == 0.0: # if red is occluded
+        # TODO: Maybe if occluded cx and cy should fall back on the previous values? Would need some restructuring for that though
+          cx = 0.0
+          cy = 0.0
+        else:
+          cx = int(M['m10'] / M['m00'])
+          cy = int(M['m01'] / M['m00'])
         return np.array([cx, cy])
 
     # Detecting the centre of the green circle
@@ -96,33 +101,65 @@ class image_converter:
         return np.array([cx, cy])
         
     def detect_orange(self, image):
+        # TODO: Check that this is working correctly and detecting the correct color
+        # TODO: Add function to distinguish target via Chamfer matching (presumably)
+        # TODO: Copy coordinate functions to get coordinates of target
         mask = cv2.inRange(image, (0, 50, 110), (50, 200, 220))
         cv2.imshow('window2', mask)
         return mask
+        
 
     # Calculate the conversion from pixel to meter
     def pixel2meter(self, image):
         # Obtain the centre of each coloured blob
         circle1Pos = self.detect_blue(image)
         circle2Pos = self.detect_green(image)
-        # find the distance between two circles
         dist = np.sum((circle1Pos - circle2Pos) ** 2)
-        return 2 / np.sqrt(dist)
+        return 3.5 / np.sqrt(dist)
+        
 
-    # Calculate the relevant joint angles from the image
-    def detect_joint_angles(self, image1, image2):
-        a = self.pixel2meter(image1)
-        b = self.pixel2meter(image2)
+    # Calculate the relevant joint vectors from the image
+    def detect_joint_angles(self, image):
+        a = self.pixel2meter(image)
+        b = self.pixel2meter(image)
+        
         # Obtain the centre of each coloured blob
-        center = a * self.detect_yellow(image1)
-        circle1Pos = a * self.detect_blue(image1)
-        circle2Pos = a * self.detect_green(image1)
-        circle3Pos = a * self.detect_red(image1)
-        # Solve using trigonometry
-        ja1 = np.arctan2(center[0] - circle1Pos[0], center[1] - circle1Pos[1])
-        ja2 = np.arctan2(circle1Pos[0] - circle2Pos[0], circle1Pos[1] - circle2Pos[1]) - ja1
-        ja3 = np.arctan2(circle2Pos[0] - circle3Pos[0], circle2Pos[1] - circle3Pos[1]) - ja2 - ja1
-        return np.array([ja1, ja2, ja3])
+        center = a * self.detect_yellow(image)
+        circle1Pos = a * self.detect_blue(image)
+        circle2Pos = a * self.detect_green(image)
+        circle3Pos = a * self.detect_red(image)
+        
+        # Get vector for each joint
+        ytob = center - circle1Pos
+        btog = center - circle2Pos
+        gtor = center - circle3Pos
+
+        # Return 2d coordinates
+        return np.array([ytob[0], ytob[1], btog[0], btog[1], gtor[0], gtor[1], center[0], center[1]])
+        
+        
+    def get_3d_coords(self, image1, image2):
+    
+        # Get 2d coordinates
+        self.image1_coords = self.detect_joint_angles(image1)
+        self.image2_coords = self.detect_joint_angles(image2)
+        
+        # Get 3d coordinates
+        # TODO: how to get z-coord???
+        self.yellow = np.array([0,0,0])
+        self.blue = np.array([self.image1_coords[0], self.image2_coords[1], max(self.image1_coords[1], self.image2_coords[0])])
+        self.green = np.array([self.image1_coords[2], self.image2_coords[3], max(self.image1_coords[3], self.image2_coords[2])])
+        self.red = np.array([self.image1_coords[4], self.image2_coords[5], max(self.image1_coords[5], self.image2_coords[4])])
+        
+        # Return 3d coordinates
+        return [self.blue, self.green, self.red]
+        
+        
+    def get_angles(self, image1, image2):
+        # TODO: ANGLES
+        self.coords = self.get_3d_coords(image1, image2)
+        return self.coords
+        
 
     # Recieve data, process it, and publish
     def callback(self, image1, image2):
@@ -144,7 +181,7 @@ class image_converter:
         # Publish the results
         try:
             #self.detect_orange(cv_image1)
-            self.publish_angles(self.detect_joint_angles(cv_image1, cv_image2))
+            self.publish_angles(self.get_angles(cv_image1, cv_image2))
             #self.image_pub.publish(self.bridge.cv2_to_imgmsg(cv_image, "bgr8"))
             #self.joints_pub.publish(self.joints)
         except CvBridgeError as e:
