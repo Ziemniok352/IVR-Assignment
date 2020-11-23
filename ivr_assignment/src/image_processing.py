@@ -22,6 +22,11 @@ class image_converter:
         self.image_pub = rospy.Publisher("image_topic", Image, queue_size=1)
         # initialize a publisher to send joints' angular position to a topic called joints_pos
         self.joints_pub = rospy.Publisher("joints_pos", Float64MultiArray, queue_size=10)
+        # initialize a publisher to send end effector position to a topic called end_effector_position
+        self.end_effector_pos = rospy.Publisher("end_effector_pos", Float64MultiArray, queue_size=10)
+        # initialize a publisher to send target position to a topic called target_pos
+        self.target_pos = rospy.Publisher("target_pos", Float64MultiArray, queue_size=10)
+
         # initialize the bridge between openCV and ROS
         self.bridge = CvBridge()
         # initialize a subscribers and time synchronizer
@@ -168,7 +173,14 @@ class image_converter:
         self.angles.append(np.arctan2(self.coords[1][1], self.coords[1][0]) - self.angles[0])
         self.angles.append(np.arctan2(self.coords[2][1], self.coords[2][0]) - self.angles[1] - self.angles[0])
         return self.angles
-        
+
+    def detect_end_effector_pos(self):
+        #find end effector coordinates from img and publish in topic(end_effector_pos) so control.py can use it
+        pass
+
+    def target_end_effector_pos(self):
+        #find target coordinates from img and publish in topic(target_pos) so control.py can use it
+        pass
 
     # Recieve data, process it, and publish
     def callback(self, image1, image2):
