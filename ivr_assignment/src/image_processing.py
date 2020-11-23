@@ -112,16 +112,15 @@ class image_converter:
     # Calculate the conversion from pixel to meter
     def pixel2meter(self, image):
         # Obtain the centre of each coloured blob
-        circle1Pos = self.detect_blue(image)
-        circle2Pos = self.detect_green(image)
+        circle1Pos = self.detect_yellow(image)
+        circle2Pos = self.detect_blue(image)
         dist = np.sum((circle1Pos - circle2Pos) ** 2)
-        return 3.5 / np.sqrt(dist)
+        return 2.5 / np.sqrt(dist)
         
 
     # Calculate the relevant joint vectors from the image
     def detect_joint_angles(self, image):
         a = self.pixel2meter(image)
-        b = self.pixel2meter(image)
         
         # Obtain the centre of each coloured blob
         center = a * self.detect_yellow(image)
@@ -133,6 +132,7 @@ class image_converter:
         ytob = center - circle1Pos
         btog = center - circle2Pos
         gtor = center - circle3Pos
+        print('ytob: ' + str(ytob))
 
         # Return 2d coordinates
         return np.array([ytob[0], ytob[1], btog[0], btog[1], gtor[0], gtor[1], center[0], center[1]])
@@ -146,10 +146,13 @@ class image_converter:
         
         # Get 3d coordinates
         # TODO: how to get z-coord???
+        # TODO: something is very wrong, because blue's coords should be
+        # constant in the current setup, and they're not.
         self.yellow = np.array([0,0,0])
         self.blue = np.array([self.image1_coords[0], self.image2_coords[1], max(self.image1_coords[1], self.image2_coords[0])])
         self.green = np.array([self.image1_coords[2], self.image2_coords[3], max(self.image1_coords[3], self.image2_coords[2])])
         self.red = np.array([self.image1_coords[4], self.image2_coords[5], max(self.image1_coords[5], self.image2_coords[4])])
+        print(self.blue)
         
         # Return 3d coordinates
         return [self.blue, self.green, self.red]
@@ -157,8 +160,14 @@ class image_converter:
         
     def get_angles(self, image1, image2):
         # TODO: ANGLES
+        # TODO: Check coordinate measurements for accuracy so we can
+        # start checking this too
         self.coords = self.get_3d_coords(image1, image2)
-        return self.coords
+        self.angles = []
+        self.angles.append(np.arctan2(self.coords[0][1], self.coords[0][0]))
+        self.angles.append(np.arctan2(self.coords[1][1], self.coords[1][0]) - self.angles[0])
+        self.angles.append(np.arctan2(self.coords[2][1], self.coords[2][0]) - self.angles[1] - self.angles[0])
+        return self.angles
         
 
     # Recieve data, process it, and publish
