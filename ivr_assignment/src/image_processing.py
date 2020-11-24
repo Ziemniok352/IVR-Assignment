@@ -10,6 +10,7 @@ from std_msgs.msg import String
 from sensor_msgs.msg import Image, CameraInfo
 from std_msgs.msg import Float64MultiArray, Float64
 from cv_bridge import CvBridge, CvBridgeError
+from scipy.optimize import least_squares
 #print("Imports done :)")
 
 class image_converter:
@@ -81,8 +82,12 @@ class image_converter:
         kernel = np.ones((5, 5), np.uint8)
         mask = cv2.dilate(mask, kernel, iterations=3)
         M = cv2.moments(mask)
-        cx = int(M['m10'] / M['m00'])
-        cy = int(M['m01'] / M['m00'])
+        if M['m00'] == 0.0: 
+          cx = 0.0
+          cy = 0.0
+        else:
+          cx = int(M['m10'] / M['m00'])
+          cy = int(M['m01'] / M['m00'])
         return np.array([cx, cy])
 
     # Detecting the centre of the blue circle
@@ -91,8 +96,12 @@ class image_converter:
         kernel = np.ones((5, 5), np.uint8)
         mask = cv2.dilate(mask, kernel, iterations=3)
         M = cv2.moments(mask)
-        cx = int(M['m10'] / M['m00'])
-        cy = int(M['m01'] / M['m00'])
+        if M['m00'] == 0.0: 
+          cx = 0.0
+          cy = 0.0
+        else:
+          cx = int(M['m10'] / M['m00'])
+          cy = int(M['m01'] / M['m00'])
         return np.array([cx, cy])
 
     # Detecting the centre of the yellow circle
@@ -101,15 +110,19 @@ class image_converter:
         kernel = np.ones((5, 5), np.uint8)
         mask = cv2.dilate(mask, kernel, iterations=3)
         M = cv2.moments(mask)
-        cx = int(M['m10'] / M['m00'])
-        cy = int(M['m01'] / M['m00'])
+        if M['m00'] == 0.0: 
+          cx = 0.0
+          cy = 0.0
+        else:
+          cx = int(M['m10'] / M['m00'])
+          cy = int(M['m01'] / M['m00'])
         return np.array([cx, cy])
         
     def detect_orange(self, image):
         # TODO: Check that this is working correctly and detecting the correct color
         # TODO: Add function to distinguish target via Chamfer matching (presumably)
         # TODO: Copy coordinate functions to get coordinates of target
-        mask = cv2.inRange(image, (0, 50, 110), (50, 200, 220))
+        mask = cv2.inRange(image, (25, 80, 30), (35, 100, 90))
         cv2.imshow('window2', mask)
         return mask
         
@@ -124,7 +137,7 @@ class image_converter:
         
 
     # Calculate the relevant joint vectors from the image
-    def detect_joint_angles(self, image):
+    def detect_joint_locations(self, image):
         a = self.pixel2meter(image)
         
         # Obtain the centre of each coloured blob
@@ -132,47 +145,56 @@ class image_converter:
         circle1Pos = a * self.detect_blue(image)
         circle2Pos = a * self.detect_green(image)
         circle3Pos = a * self.detect_red(image)
-        
-        # Get vector for each joint
-        ytob = center - circle1Pos
-        btog = center - circle2Pos
-        gtor = center - circle3Pos
-        print('ytob: ' + str(ytob))
 
         # Return 2d coordinates
-        return np.array([ytob[0], ytob[1], btog[0], btog[1], gtor[0], gtor[1], center[0], center[1]])
+        return np.array([center[0], center[1], circle1Pos[0], circle1Pos[1], circle2Pos[0], circle2Pos[1], circle3Pos[0], circle3Pos[1]])
         
         
     def get_3d_coords(self, image1, image2):
     
         # Get 2d coordinates
-        self.image1_coords = self.detect_joint_angles(image1)
-        self.image2_coords = self.detect_joint_angles(image2)
+        self.image1_coords = self.detect_joint_locations(image1)
+        self.image2_coords = self.detect_joint_locations(image2)
         
         # Get 3d coordinates
-        # TODO: how to get z-coord???
-        # TODO: something is very wrong, because blue's coords should be
-        # constant in the current setup, and they're not.
-        self.yellow = np.array([0,0,0])
-        self.blue = np.array([self.image1_coords[0], self.image2_coords[1], max(self.image1_coords[1], self.image2_coords[0])])
-        self.green = np.array([self.image1_coords[2], self.image2_coords[3], max(self.image1_coords[3], self.image2_coords[2])])
-        self.red = np.array([self.image1_coords[4], self.image2_coords[5], max(self.image1_coords[5], self.image2_coords[4])])
+        yellow = np.array([self.image1_coords[6], self.image2_coords[7], np.mean([self.image1_coords[7], self.image2_coords[6]])])
+        self.blue = np.array([self.image1_coords[0], self.image2_coords[1], np.mean([self.image1_coords[1], self.image2_coords[0]])])
+        self.green = np.array([self.image1_coords[2], self.image2_coords[3], np.mean([self.image1_coords[3], self.image2_coords[2]])])
+        self.red = np.array([self.image1_coords[4], self.image2_coords[5], np.mean([self.image1_coords[5], self.image2_coords[4]])])
         print(self.blue)
         
         # Return 3d coordinates
-        return [self.blue, self.green, self.red]
+        return [yellow-self.blue, yellow-self.green, yellow-self.red]
         
         
     def get_angles(self, image1, image2):
-        # TODO: ANGLES
-        # TODO: Check coordinate measurements for accuracy so we can
-        # start checking this too
+        # TODO: Check math-- something's not quite right, but idk what
         self.coords = self.get_3d_coords(image1, image2)
-        self.angles = []
-        self.angles.append(np.arctan2(self.coords[0][1], self.coords[0][0]))
-        self.angles.append(np.arctan2(self.coords[1][1], self.coords[1][0]) - self.angles[0])
-        self.angles.append(np.arctan2(self.coords[2][1], self.coords[2][0]) - self.angles[1] - self.angles[0])
+        self.angles = np.array([self.estimate_angle(self.coords[1], self.coords[0], 3.5, 'x'), self.estimate_angle(self.coords[1], self.coords[0], 0, 'y'), self.estimate_angle(self.coords[2], self.coords[1], 3, 'x')])
+        #self.angles.append(np.arctan2(self.coords[0][1], self.coords[0][0]))
+        #self.angles.append(np.arctan2(self.coords[1][1], self.coords[1][0]) - self.angles[0])
+        #self.angles.append(np.arctan2(self.coords[2][1], self.coords[2][0]) - self.angles[1] - self.angles[0])
         return self.angles
+        
+        
+    def estimate_angle(self, coord1, coord2, h, axis):
+        a = (coord1-coord2)/np.linalg.norm(coord1)
+        b = coord2/np.linalg.norm(coord2)
+        if axis == 'x':
+          return least_squares(self.x_fun, [0.0], args = (a,b,h), bounds = (-np.pi/2, np.pi/2)).x
+        elif axis == 'y':
+          return least_squares(self.y_fun, [0.0], args = (a,b), bounds = (-np.pi/2, np.pi/2)).x
+        else:
+          print('axis must be either \'x\' or \'y\'. ')
+          return 0
+        
+    def x_fun(self, theta, a, b, h):
+        m = np.array([[1,0,0], [0,np.cos(theta),-np.sin(theta)], [0,np.sin(theta),np.cos(theta)]])
+        return np.sum(np.abs(m.dot(a) - b))
+        
+    def y_fun(self, theta, a, b):
+        m = np.array([[np.cos(theta),0,-np.sin(theta)], [0,1,0], [np.sin(theta),0,np.cos(theta)]])
+        return np.sum(np.abs(m.dot(a) - b))
 
     def detect_end_effector_pos(self):
         #find end effector coordinates from img and publish in topic(end_effector_pos) so control.py can use it
