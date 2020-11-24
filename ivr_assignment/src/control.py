@@ -4,6 +4,9 @@ import sys
 import rospy
 import cv2
 import numpy as np
+from math import pi
+from numpy import sin
+from numpy import cos
 from std_msgs.msg import String
 from geometry_msgs.msg import Point
 from sensor_msgs.msg import Image, JointState
@@ -25,11 +28,11 @@ class control:
         self.bridge = CvBridge()
 
         #self.robot_pos_sub = rospy.Subscriber(get from img processing)
-        #self.target_pos_sub = rospy.Subscriber(get from img processing)  
+        #self.target_pos_sub = rospy.Subscriber(get from img processing) or directly from target move
         
         # record the begining time
         self.time_trajectory = rospy.get_time()
-        # initialize errors
+        # initialize everything
         self.time_previous_step = np.array([rospy.get_time()], dtype='float64')     
         self.time_previous_step2 = np.array([rospy.get_time()], dtype='float64')   
 
@@ -39,18 +42,47 @@ class control:
         self.end_effector_position = np.array([0.0,0.0,0.0,0.0])
         self.target_position = np.array([0.0,0.0,0.0])
 
-    def forward_kinematics(self,angles):
-        c1,c2,c3,c4 = np.cos(angles[0]), np.cos(angles[1]), np.cos(angles[2]), np.cos(angles[3])
-        s1,s2,s3,s4 = np.sin(angles[0]), np.sin(angles[1]), np.sin(angles[2]), np.sin(angles[3])
+    
+    def fk(self,angles):
+        theta1 = angles[0]
+        theta2 = angles[1]
+        theta3 = angles[2]
+        theta4 = angles[3]
 
-        x = 0
-        y = 0
-        z = 0
-        print("FK\tx: {:.3f}, y: {:.3f}, z: {:.3f}".format(x,y,z), end='\r')
+        c1,c2,c3,c4 = np.cos(theta1), np.cos(theta2), np.cos(theta3), np.cos(theta4)
+        s1,s2,s3,s4 = np.sin(theta1), np.sin(theta2), np.sin(theta3), np.sin(theta4)
+
+        x = 2*c2*s1*s4 + 2*c1*c4*s3 + 3*c1*s3  + 2*c3*c4*s1*s2 + 3*c3*s1*s2,
+        y = 2*c4*s1*s3 + -2*c1*c2*s4 - 2*c1*c3*c4*s2 - 3*c1*c3*s2  + 3*s1*s3,
+        z = 3*c2*c3 - 2*s2*s4 + 2*c2*c3*c4 + 2
+
         return(np.array([x,y,z]))
 
     def calculate_jacobian(self, angles):
-        jacobian = 0
+        theta1 = angles[0]
+        theta2 = angles[1]
+        theta3 = angles[2]
+        theta4 = angles[3]
+
+        c1,c2,c3,c4 = np.cos(theta1), np.cos(theta2), np.cos(theta3), np.cos(theta4)
+        s1,s2,s3,s4 = np.sin(theta1), np.sin(theta2), np.sin(theta3), np.sin(theta4)
+
+        #this is basically just a derivative of the fk above
+        jacobian = np.array([[
+        (-2*s1*s3 + 2*s2*c1*c3)*c4 - 3*s1*s3 + 3*s2*c1*c3 + 2*s4*c1*c2, 
+        -2*s1*s2*s4 + 2*s1*c2*c3*c4 + 3*s1*c2*c3, 
+        (-2*s1*s2*s3 + 2*c1*c3)*c4 - 3*s1*s2*s3 + 3*c1*c3, 
+        -(2*s1*s2*c3 + 2*s3*c1)*s4 + 2*s1*c2*c4], 
+        [(2*s1*s2*c3 + 2*s3*c1)*c4 + 3*s1*s2*c3 + 2*s1*s4*c2 + 3*s3*c1, 
+        2*s2*s4*c1 - 2*c1*c2*c3*c4 - 3*c1*c2*c3, 
+        (2*s1*c3 + 2*s2*s3*c1)*c4 + 3*s1*c3 + 3*s2*s3*c1, 
+        -(2*s1*s3 - 2*s2*c1*c3)*s4 - 2*c1*c2*c4], 
+        [0,
+        -2*s2*c3*c4 - 3*s2*c3 - 2*s4*c2,
+        -2*s3*c2*c4 - 3*s3*c2,
+        -2*s2*c4 - 2*s4*c2*c3
+        ]])
+
         return jacobian
 
     
@@ -73,6 +105,8 @@ class control:
 
         # get robot end-effector position from img processing(topic)
         # pos = self.forward_kinematics(position)
+        pos = self.fk([0,0,0,0])
+        pos_d = [2,3,4]
         # get target pos from img processing(topic)
         # pos_d = self.target_position
         
@@ -80,6 +114,7 @@ class control:
         self.error_d = ((pos_d - pos) - self.error)/dt
         # estimate error
         self.error = pos_d-pos
+
 
         #end effector position (angles)
         q = position
@@ -90,13 +125,23 @@ class control:
         q_d = q + (dt * dq_d)  # control input (angular position of joints)
         return q_d
 
+    def move(self, angles):
+        self.joint1 = angles[0]
+        self.joint2 = angles[1]
+        self.joint3 = angles[2]
+        self.joint4 = angles[3]
+        self.robot_joint1_pub.publish(self.joint1)
+        self.robot_joint2_pub.publish(self.joint2)
+        self.robot_joint3_pub.publish(self.joint3)
+        self.robot_joint4_pub.publish(self.joint4)
     
     # Recieve data, process it, and publish
     def callback(self):#data as arg like in labs?
 
         #make these args, the same as rostopic pub command for 10 angle comparison
-        end_effector = self.forward_kinematics([0.1,0.2,0.3,0.4])
-        print(end_effector)
+       
+        t1 = self.fk(([0.0,0.0,0.0,0.0]))
+        print(t1)
 
         ####Compare above result with end eff pos from a topic in img processing.py
         
@@ -107,29 +152,32 @@ class control:
         #self.end_effector.data= x_e_image	
 
         # send control commands to joints (lab 3)
-        #q_d = self.control_closed(data.position)
-        #self.joint1=Float64()
-        #self.joint1.data= q_d[0]
-        #self.joint2=Float64()
-        #self.joint2.data= q_d[1]
-        #self.joint3=Float64()
-        #self.joint3.data= q_d[2]
-        #self.joint4=Float64()
-        #self.joint4.data= q_d[3]
+        q_d = self.control_closed([0.63,0.25,0.23,0.8])
+        print(q_d)
+        self.joint1=Float64()
+        self.joint1.data= q_d[0]
+        self.joint2=Float64()
+        self.joint2.data= q_d[1]
+        self.joint3=Float64()
+        self.joint3.data= q_d[2]
+        self.joint4=Float64()
+        self.joint4.data= q_d[3]
 
         # Publish the results
-        #try: 
-            #self.robot_joint1_pub.publish(self.joint1)
-            #self.robot_joint2_pub.publish(self.joint2)
-            #self.robot_joint3_pub.publish(self.joint3)
-            #self.robot_joint4_pub.publish(self.joint4)
-        #except CvBridgeError as e:
-            #print(e)
+        try: 
+            self.robot_joint1_pub.publish(self.joint1)
+            self.robot_joint2_pub.publish(self.joint2)
+            self.robot_joint3_pub.publish(self.joint3)
+            self.robot_joint4_pub.publish(self.joint4)
+            print(self.joint1,self.joint2,self.joint3,self.joint4)
+        except CvBridgeError as e:
+            print(e)
 
     # call the class
 def main(args):
     c = control()
-    c.callback()
+    #c.callback()
+    c.move([1.0, 0.5, 0.5, 0.5])
     try:
         rospy.spin()
     except KeyboardInterrupt:
