@@ -7,6 +7,7 @@ import numpy as np
 from math import pi
 from numpy import sin
 from numpy import cos
+from functools import reduce
 from std_msgs.msg import String
 from geometry_msgs.msg import Point
 from sensor_msgs.msg import Image, JointState
@@ -49,72 +50,88 @@ class control:
     def targetCallback(self,data):
         self.target_position = np.asarray(data.position)
 
-    def fk(self,angles): #prob not right, but gives 0,0,7 when run with 0,0,0,0
-        c1,c2,c3,c4 = np.cos(angles[0]), np.cos(angles[1]), np.cos(angles[2]), np.cos(angles[3])
-        s1,s2,s3,s4 = np.sin(angles[0]), np.sin(angles[1]), np.sin(angles[2]), np.sin(angles[3])
 
-        x = 2*c2*s1*s4 + 2*c1*c4*s3 + 3*c1*s3  + 2*c3*c4*s1*s2 + 3*c3*s1*s2
-        y = 2*c4*s1*s3 + -2*c1*c2*s4 - 2*c1*c3*c4*s2 - 3*c1*c3*s2  + 3*s1*s3
-        z = 3*c2*c3 - 2*s2*s4 + 2*c2*c3*c4 + 2
+    def transform_matrix(self, alpha, a, d, theta):
+        #builds basic transformation matrix
+        return np.array([
+                [cos(theta), -sin(theta)*cos(alpha), sin(theta)*sin(alpha), a*cos(theta)],
+                [sin(theta), cos(theta)*cos(alpha), -cos(theta)*sin(alpha), a*sin(theta)],
+                [0, sin(alpha), cos(alpha), d],
+                [0,0,0,1]], dtype=np.float64)
 
-        return(np.array([x,y,z]))
+    def fk(self, angles):
+        theta1 = angles[0] + pi/2
+        theta2 = angles[1] + pi/2
+        theta3 = angles[2]
+        theta4 = angles[3]
+
+        transformations = [
+            self.transform_matrix(pi/2, 0 ,2.5,theta1),
+            self.transform_matrix(pi/2, 0, 0, theta2),
+            self.transform_matrix(-pi/2, 3.5, 0, theta3),
+            self.transform_matrix(0, 3, 0, theta4)]
+        #now multiply all transformation matrices together
+        fk_matrix = reduce(np.dot, transformations)
+        #print("fk", fk_matrix)
+        #getfirst 3 elements of final column for end effector coord
+        end_effector_pos = np.dot(fk_matrix, np.array([0,0,0,1]))
+        end_effector_pos = end_effector_pos / end_effector_pos[3]
+        print(end_effector_pos[:3])
+        return end_effector_pos[:3]
 
     def calculate_jacobian(self, angles):
-        c1,c2,c3,c4 = np.cos(angles[0]), np.cos(angles[1]), np.cos(angles[2]), np.cos(angles[3])
-        s1,s2,s3,s4 = np.sin(angles[0]), np.sin(angles[1]), np.sin(angles[2]), np.sin(angles[3])
+        theta1 = angles[0]
+        theta2 = angles[1]
+        theta3 = angles[2]
+        theta4 = angles[3]
 
-        #this is basically just a derivative of the fk above, check?
-        jacobian = np.array([[ (-2*s1*s3 + 2*s2*c1*c3)*c4 - 3*s1*s3 + 3*s2*c1*c3 + 2*s4*c1*c2, 
-        -2*s1*s2*s4 + 2*s1*c2*c3*c4 + 3*s1*c2*c3, 
-        (-2*s1*s2*s3 + 2*c1*c3)*c4 - 3*s1*s2*s3 + 3*c1*c3, -(2*s1*s2*c3 + 2*s3*c1)*s4 + 2*s1*c2*c4], 
-        [(2*s1*s2*c3 + 2*s3*c1)*c4 + 3*s1*s2*c3 + 2*s1*s4*c2 + 3*s3*c1, 
-        2*s2*s4*c1 - 2*c1*c2*c3*c4 - 3*c1*c2*c3, (2*s1*c3 + 2*s2*s3*c1)*c4 + 3*s1*c3 + 3*s2*s3*c1, 
-        -(2*s1*s3 - 2*s2*c1*c3)*s4 - 2*c1*c2*c4], 
-        [0,-2*s2*c3*c4 - 3*s2*c3 - 2*s4*c2,-2*s3*c2*c4 - 3*s3*c2,-2*s2*c4 - 2*s4*c2*c3]])
-
+        s1,s2,s3,s4 = sin(theta1), sin(theta2), sin(theta3), sin(theta4)
+        c1,c2,c3,c4 = cos(theta1), cos(theta2), cos(theta3), cos(theta4)
+        
+        jacobian = np.array([[3.5*c1*c3*s2 + 3*c1*c2*s4 + 3*(c1*c3*s2 - s1*s3)*c4 - 3.5*s1*s3,
+                3*c2*c3*c4*s1 + 3.5*c2*c3*s1 - 3*s1*s2*s4,-3.5*s1*s2*s3 + 3.5*c1*c3 - 3*(s1*s2*s3 - c1*c3)*c4,
+                3*c2*c4*s1 - 3*(c3*s1*s2 + c1*s3)*s4],
+                [3.5*c3*s1*s2 + 3*c2*s1*s4 + 3*(c3*s1*s2 + c1*s3)*c4 + 3.5*c1*s3,
+                -3*c1*c2*c3*c4 - 3.5*c1*c2*c3 + 3*c1*s2*s4,
+                3.5*c1*s2*s3 + 3*(c1*s2*s3 + c3*s1)*c4 + 3.5*c3*s1,-3*c1*c2*c4 + 3*(c1*c3*s2 - s1*s3)*s4],
+                [0,-3*c3*c4*s2 - 3.5*c3*s2 - 3*c2*s4,-3*c2*c4*s3 - 3.5*c2*s3,
+                -3*c2*c3*s4 - 3*c4*s2]])
         return jacobian
 
-    
-    #  def trajectory(self):
-    #    # get current time
-    #    cur_time = np.array([rospy.get_time() - self.time_trajectory])
-    #    x_d = float(6* np.cos(cur_time * np.pi/100))
-    #    y_d = float(6 + np.absolute(1.5* np.sin(cur_time * np.pi/100)))
-    #    return np.array([x_d, y_d])
-
     def closed_loop_control(self,position):
-        # P gain
+        #P gain
         K_p = np.array([[1,0,0],[0,1,0],[0,0,1]])
-        # D gain
+        #D gain
         K_d = np.array([[0.1,0,0],[0,0.1,0],[0,0,0.1]])
-        # estimate time step
+        #estimate time step
         cur_time = np.array([rospy.get_time()])
         dt = cur_time - self.time_previous_step
         self.time_previous_step = cur_time
 
-        # robot end-effector position (xyz)
+        #robot end-effector position (xyz)
         pos = self.fk(position)
-        # desired trajectory
+        #desired trajectory
         pos_d = self.target_position
-        # estimate derivative of error
+        #estimate derivative of error
         self.error_d = ((pos_d - pos) - self.error)/dt
-        # estimate error
+        #estimate error
         self.error = pos_d-pos
 
         #end effector position (angles)
         q = position
-        print("end effector: {}".format(pos))
-        print("target: {}".format(self.target_position))
+        #print("end effector: {}".format(pos))
+        #print("target: {}".format(self.target_position))
         J_inv = np.linalg.pinv(self.calculate_jacobian(q))  # calculating the psudeo inverse of Jacobian
         dq_d =np.dot(J_inv, (np.dot(K_d,self.error_d.transpose()) + np.dot(K_p,self.error.transpose())))  # control input (angular velocity of joints)
         q_d = q + (dt * dq_d)  # control input (angular position of joints)
         return q_d
 
+
     def callback(self,data):
         position = data.position
         
         q_d = self.closed_loop_control(position)
-        print(q_d)
+        #print(q_d)
 
         self.joint1 = Float64()
         self.joint2 = Float64()
@@ -135,7 +152,6 @@ class control:
 # call class
 def main(args):
     c = control()
-    #c.fk(0.0,0.0,0.0,0.0)
     try:
         rospy.spin()
     except KeyboardInterrupt:
