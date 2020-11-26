@@ -50,34 +50,21 @@ class control:
     def targetCallback(self,data):
         self.target_position = np.asarray(data.position)
 
-
-    def transform_matrix(self, alpha, a, d, theta):
-        #builds basic transformation matrix
-        return np.array([
-                [cos(theta), -sin(theta)*cos(alpha), sin(theta)*sin(alpha), a*cos(theta)],
-                [sin(theta), cos(theta)*cos(alpha), -cos(theta)*sin(alpha), a*sin(theta)],
-                [0, sin(alpha), cos(alpha), d],
-                [0,0,0,1]], dtype=np.float64)
-
     def fk(self, angles):
         theta1 = angles[0] + pi/2
         theta2 = angles[1] + pi/2
         theta3 = angles[2]
         theta4 = angles[3]
 
-        transformations = [
-            self.transform_matrix(pi/2, 0 ,2.5,theta1),
-            self.transform_matrix(pi/2, 0, 0, theta2),
-            self.transform_matrix(-pi/2, 3.5, 0, theta3),
-            self.transform_matrix(0, 3, 0, theta4)]
-        #now multiply all transformation matrices together
-        fk_matrix = reduce(np.dot, transformations)
-        #print("fk", fk_matrix)
-        #getfirst 3 elements of final column for end effector coord
-        end_effector_pos = np.dot(fk_matrix, np.array([0,0,0,1]))
-        end_effector_pos = end_effector_pos / end_effector_pos[3]
-        print(end_effector_pos[:3])
-        return end_effector_pos[:3]
+        s1,s2,s3,s4 = sin(theta1), sin(theta2), sin(theta3), sin(theta4)
+        c1,c2,c3,c4 = cos(theta1), cos(theta2), cos(theta3), cos(theta4)
+
+        x = 3.5*c1*c2*c3 + 3.5*s1*s3 + 3*c4*(c1*c2*c3 + s1*s3) - 3*c1*s2*s4
+        y = 3.5*s1*c2*c3 + 3*c4*(s1*c2*c3 - c1*s3) - 3*s1*s2*s4 - 3.5*c1*s3
+        z = 3.5*s2*c3 + 3*s2*c3*c4 + 3*c2*s4 + 2.5
+        #print(x,y,z)
+        return np.array([x,y,z])
+
 
     def calculate_jacobian(self, angles):
         theta1 = angles[0]
@@ -152,6 +139,7 @@ class control:
 # call class
 def main(args):
     c = control()
+    c.fk([])
     try:
         rospy.spin()
     except KeyboardInterrupt:
