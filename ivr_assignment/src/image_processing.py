@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-print('Starting...')
+#print('Starting...')
 import roslib
 import sys
 import rospy
@@ -34,7 +34,6 @@ class image_converter:
         self.image_sub1 = message_filters.Subscriber("/camera1/robot/image_raw", Image)
         self.image_sub2 = message_filters.Subscriber("/camera2/robot/image_raw", Image)
         ts = message_filters.TimeSynchronizer([self.image_sub1, self.image_sub2], 5)
-        print('filter made')
         ts.registerCallback(self.callback)
         
         
@@ -44,7 +43,7 @@ class image_converter:
       robot_joint2_est = rospy.Publisher("/image1/joint2_position_estimator", Float64, queue_size=10)
       robot_joint3_est = rospy.Publisher("/image1/joint3_position_estimator", Float64, queue_size=10)
       robot_joint4_est = rospy.Publisher("/image1/joint4_position_estimator", Float64, queue_size=10)
-      #print(angles[0], angles[1], angles[2])
+
       # Publishes results
       joint2 = Float64()
       joint2.data = angles[0]
@@ -55,7 +54,7 @@ class image_converter:
       joint4 = Float64()
       joint4.data = angles[2]
       robot_joint4_est.publish(joint4)
-      print(joint2, joint3, joint4)
+      #print(joint2, joint3, joint4)
 
     # In this method you can focus on detecting the centre of the red circle
     def detect_red(self, image):
@@ -120,11 +119,25 @@ class image_converter:
         
     def detect_orange(self, image):
         # TODO: Check that this is working correctly and detecting the correct color
-        # TODO: Add function to distinguish target via Chamfer matching (presumably)
-        # TODO: Copy coordinate functions to get coordinates of target
-        mask = cv2.inRange(image, (25, 80, 30), (35, 100, 90))
-        cv2.imshow('window2', mask)
+        # TODO: Check accuracy of location calculations
+        # TODO: Write publisher
+        mask = cv2.inRange(image, (0, 40, 100), (100, 100, 255))
         return mask
+        
+    def detect_target(self, image1, image2, template):
+        # Chamfer matching
+        masked1 = self.detect_orange(image1)
+        masked2 = self.detect_orange(image2)
+        matched1 = cv2.matchTemplate(masked2, template, 1)
+        matched2 = cv2.matchTemplate(masked2, template, 1)
+        loc2d = np.array([cv2.minMaxLoc(matched1)[2], cv2.minMaxLoc(matched2)[2]])
+        # Coordinates
+        a1 = self.pixel2meter(image1)
+        a2 = self.pixel2meter(image2)
+        coords = np.array([loc2d[0] * a1, loc2d[1] * a1])
+        self.target = np.array([coords[0][0], coords[1][1], np.mean([coords[0][1], coords[1][0]])])
+        return self.yellow - self.target
+        
         
 
     # Calculate the conversion from pixel to meter
@@ -157,29 +170,27 @@ class image_converter:
         self.image2_coords = self.detect_joint_locations(image2)
         
         # Get 3d coordinates
-        yellow = np.array([self.image1_coords[6], self.image2_coords[7], np.mean([self.image1_coords[7], self.image2_coords[6]])])
+        self.yellow = np.array([self.image1_coords[6], self.image2_coords[7], np.mean([self.image1_coords[7], self.image2_coords[6]])])
         self.blue = np.array([self.image1_coords[0], self.image2_coords[1], np.mean([self.image1_coords[1], self.image2_coords[0]])])
         self.green = np.array([self.image1_coords[2], self.image2_coords[3], np.mean([self.image1_coords[3], self.image2_coords[2]])])
         self.red = np.array([self.image1_coords[4], self.image2_coords[5], np.mean([self.image1_coords[5], self.image2_coords[4]])])
         print(self.blue)
         
         # Return 3d coordinates
-        return [yellow-self.blue, yellow-self.green, yellow-self.red]
+        return [self.yellow-self.blue, self.yellow-self.green, self.yellow-self.red]
         
         
     def get_angles(self, image1, image2):
         # TODO: Check math-- something's not quite right, but idk what
         self.coords = self.get_3d_coords(image1, image2)
         self.angles = np.array([self.estimate_angle(self.coords[1], self.coords[0], 3.5, 'x'), self.estimate_angle(self.coords[1], self.coords[0], 0, 'y'), self.estimate_angle(self.coords[2], self.coords[1], 3, 'x')])
-        #self.angles.append(np.arctan2(self.coords[0][1], self.coords[0][0]))
-        #self.angles.append(np.arctan2(self.coords[1][1], self.coords[1][0]) - self.angles[0])
-        #self.angles.append(np.arctan2(self.coords[2][1], self.coords[2][0]) - self.angles[1] - self.angles[0])
         return self.angles
         
         
     def estimate_angle(self, coord1, coord2, h, axis):
         a = (coord1-coord2)/np.linalg.norm(coord1)
         b = coord2/np.linalg.norm(coord2)
+        est = np.arctan2(a, b)
         if axis == 'x':
           return least_squares(self.x_fun, [0.0], args = (a,b,h), bounds = (-np.pi/2, np.pi/2)).x
         elif axis == 'y':
@@ -198,6 +209,7 @@ class image_converter:
 
     def detect_end_effector_pos(self):
         #find end effector coordinates from img and publish in topic(end_effector_pos) so control.py can use it
+        
         pass
 
     def target_end_effector_pos(self):
@@ -206,34 +218,33 @@ class image_converter:
 
     # Recieve data, process it, and publish
     def callback(self, image1, image2):
-        print('Running callback')
         # Recieve the image
         try:
             cv_image1 = self.bridge.imgmsg_to_cv2(image1, "bgr8")
             cv_image2 = self.bridge.imgmsg_to_cv2(image2, "bgr8")
-            print('Images received')
+            template = cv2.imread('/home/tully/catkin_ws/src/ivr_assignment/src/template.png', 1)
+            #cv2.imshow('template', template)
+            #template = self.bridge.imgmsg_to_cv2(template, "bgr8")
+            template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
         except CvBridgeError as e:
             print(e)
 
-        #cv2.imshow('window', cv_image)
         cv2.waitKey(3)
-
-        #self.joints = Float64MultiArray()
-        #self.joints.data = a
 
         # Publish the results
         try:
-            #self.detect_orange(cv_image1)
             self.publish_angles(self.get_angles(cv_image1, cv_image2))
-            #self.image_pub.publish(self.bridge.cv2_to_imgmsg(cv_image, "bgr8"))
-            #self.joints_pub.publish(self.joints)
+            print(self.detect_target(cv_image1, cv_image2, template))
+            
         except CvBridgeError as e:
             print(e)
+        
+        
 
 
 # call the class
 def main():
-    print('Running main...')
+    #print('Running main...')
     ic = image_converter()
     try:
         rospy.spin()
