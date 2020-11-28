@@ -4,6 +4,7 @@ import roslib
 import sys
 import rospy
 import cv2
+import os
 import numpy as np
 import message_filters
 from std_msgs.msg import String
@@ -218,7 +219,6 @@ class image_converter:
         end_pos = Float64()
         end_pos.data = self.yellow - self.red
         robot_end_pos_pub.publish(end_pos)
-        pass
 
     def target_end_effector_pos(self):
         #find target coordinates from img and publish in topic(target_pos) so control.py can use it
@@ -226,7 +226,6 @@ class image_converter:
         target_pos = Float64()
         target_pos.data = self.yellow-self.target
         target_pos_pub.publish(target_pos)
-        pass
 
     # Recieve data, process it, and publish
     def callback(self, image1, image2):
@@ -234,7 +233,8 @@ class image_converter:
         try:
             cv_image1 = self.bridge.imgmsg_to_cv2(image1, "bgr8")
             cv_image2 = self.bridge.imgmsg_to_cv2(image2, "bgr8")
-            template = cv2.imread('/home/tully/catkin_ws/src/ivr_assignment/src/template.png', 1)
+            imgPath = os.path.join(os.getcwd(), 'template.png')
+            template = cv2.imread(imgPath, 1)
             #cv2.imshow('template', template)
             #template = self.bridge.imgmsg_to_cv2(template, "bgr8")
             template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
