@@ -38,7 +38,6 @@ class image_converter:
         
         
     def publish_angles(self, angles):
-      #print('Publishing...')
       # Initializes publishers 
       robot_joint2_est = rospy.Publisher("/image1/joint2_position_estimator", Float64, queue_size=10)
       robot_joint3_est = rospy.Publisher("/image1/joint3_position_estimator", Float64, queue_size=10)
@@ -67,7 +66,6 @@ class image_converter:
         M = cv2.moments(mask)
         # Calculate pixel coordinates for the centre of the blob
         if M['m00'] == 0.0: # if red is occluded
-        # TODO: Maybe if occluded cx and cy should fall back on the previous values? Would need some restructuring for that though
           cx = 0.0
           cy = 0.0
         else:
@@ -120,22 +118,29 @@ class image_converter:
     def detect_orange(self, image):
         # TODO: Check that this is working correctly and detecting the correct color
         # TODO: Check accuracy of location calculations
-        # TODO: Write publisher
         mask = cv2.inRange(image, (0, 40, 100), (100, 100, 255))
         return mask
         
     def detect_target(self, image1, image2, template):
+        # Notes:
+        # Currently this function outputs coordinates for two different things. This probably means that either it's something from the two different sets of 2d coordinates, one from each image, OR it's still detecting both orange things.
+        # Also, I currently have no idea if either sets of coordinates are correct.
+        
         # Chamfer matching
         masked1 = self.detect_orange(image1)
         masked2 = self.detect_orange(image2)
         matched1 = cv2.matchTemplate(masked2, template, 1)
         matched2 = cv2.matchTemplate(masked2, template, 1)
         loc2d = np.array([cv2.minMaxLoc(matched1)[2], cv2.minMaxLoc(matched2)[2]])
+        
         # Coordinates
         a1 = self.pixel2meter(image1)
         a2 = self.pixel2meter(image2)
         coords = np.array([loc2d[0] * a1, loc2d[1] * a1])
         self.target = np.array([coords[0][0], coords[1][1], np.mean([coords[0][1], coords[1][0]])])
+        
+        # Publish results
+        self.target_end_effector_pos()
         return self.yellow - self.target
         
         
@@ -209,11 +214,18 @@ class image_converter:
 
     def detect_end_effector_pos(self):
         #find end effector coordinates from img and publish in topic(end_effector_pos) so control.py can use it
-        
+        robot_end_pos_pub = rospy.Publisher("/image_processing/end_effector_pos", Float64, queue_size=10)
+        end_pos = Float64()
+        end_pos.data = self.yellow - self.red
+        robot_end_pos_pub.publish(end_pos)
         pass
 
     def target_end_effector_pos(self):
         #find target coordinates from img and publish in topic(target_pos) so control.py can use it
+        target_pos_pub = rospy.Publisher("/image_processing/target_position", Float64, queue_size=10)
+        target_pos = Float64()
+        target_pos.data = self.yellow-self.target
+        target_pos_pub.publish(target_pos)
         pass
 
     # Recieve data, process it, and publish
@@ -234,7 +246,9 @@ class image_converter:
         # Publish the results
         try:
             self.publish_angles(self.get_angles(cv_image1, cv_image2))
+            # Target detection currently prints output as well for debug purposes
             print(self.detect_target(cv_image1, cv_image2, template))
+            self.detect_end_effector_pos()
             
         except CvBridgeError as e:
             print(e)
