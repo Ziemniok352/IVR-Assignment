@@ -46,13 +46,13 @@ class image_converter:
 
       # Publishes results
       joint2 = Float64()
-      joint2.data = angles[0]
+      joint2.data = self.angles[0] * -1
       robot_joint2_est.publish(joint2)
       joint3 = Float64()
-      joint3.data = angles[1]
+      joint3.data = self.angles[1] * -1
       robot_joint3_est.publish(joint3)
       joint4 = Float64()
-      joint4.data = angles[2]
+      joint4.data = self.angles[2] * -1
       robot_joint4_est.publish(joint4)
       #print(joint2, joint3, joint4)
 
@@ -117,32 +117,29 @@ class image_converter:
         return np.array([cx, cy])
         
     def detect_orange(self, image):
-        # TODO: Check that this is working correctly and detecting the correct color
-        # TODO: Check accuracy of location calculations
         mask = cv2.inRange(image, (0, 40, 100), (100, 100, 255))
         return mask
         
     def detect_target(self, image1, image2, template):
         # Notes:
-        # Currently this function outputs coordinates for two different things. This probably means that either it's something from the two different sets of 2d coordinates, one from each image, OR it's still detecting both orange things.
-        # Also, I currently have no idea if either sets of coordinates are correct.
-        
+        # Should be correct now!
+        # Except that I'm not sure if the coordinates should be scaled to the yellow joint or not, or to the image size, or whatever
+               
         # Chamfer matching
         masked1 = self.detect_orange(image1)
         masked2 = self.detect_orange(image2)
-        matched1 = cv2.matchTemplate(masked2, template, 1)
+        matched1 = cv2.matchTemplate(masked1, template, 1)
         matched2 = cv2.matchTemplate(masked2, template, 1)
-        loc2d = np.array([cv2.minMaxLoc(matched1)[2], cv2.minMaxLoc(matched2)[2]])
+        coord1 = cv2.minMaxLoc(matched1)[2]
+        coord2 = cv2.minMaxLoc(matched2)[2]
         
         # Coordinates
-        a1 = self.pixel2meter(image1)
-        a2 = self.pixel2meter(image2)
-        coords = np.array([loc2d[0] * a1, loc2d[1] * a1])
-        self.target = np.array([coords[0][0], coords[1][1], np.mean([coords[0][1], coords[1][0]])])
+        coords = np.array([coord1, coord2])
+        self.target = np.array([coords[1][0], coords[0][0], np.mean([coords[0][1], coords[1][1]])])
         
         # Publish results
         self.target_end_effector_pos()
-        return self.yellow - self.target
+        return self.target
         
         
 
@@ -163,10 +160,25 @@ class image_converter:
         center = a * self.detect_yellow(image)
         circle1Pos = a * self.detect_blue(image)
         circle2Pos = a * self.detect_green(image)
-        circle3Pos = a * self.detect_red(image)
+        #circle3Pos = a * self.detect_red(image)
+        
+        # Get position with respect to yellow
+        blue_to_yellow = center - circle1Pos
+        blue_to_yellow = blue_to_yellow * np.array([-1,1])
+        green_to_yellow = center - circle2Pos
+        green_to_yellow = green_to_yellow * np.array([-1,1])
+        
+        # Get end effector position
+        circle3Pos = self.detect_red(image)
+        if circle3Pos[0] == 0 and circle3Pos[1] == 0:
+            red_to_yellow = circle3Pos
+        else:
+            red_to_yellow = a * (center - circle3Pos)
+            red_to_yellow = red_to_yellow * np.array([-1,1])
+        
 
         # Return 2d coordinates
-        return np.array([center[0], center[1], circle1Pos[0], circle1Pos[1], circle2Pos[0], circle2Pos[1], circle3Pos[0], circle3Pos[1]])
+        return np.array([center, blue_to_yellow, green_to_yellow, red_to_yellow])
         
         
     def get_3d_coords(self, image1, image2):
@@ -176,36 +188,57 @@ class image_converter:
         self.image2_coords = self.detect_joint_locations(image2)
         
         # Get 3d coordinates
-        self.yellow = np.array([self.image1_coords[6], self.image2_coords[7], np.mean([self.image1_coords[7], self.image2_coords[6]])])
-        self.blue = np.array([self.image1_coords[0], self.image2_coords[1], np.mean([self.image1_coords[1], self.image2_coords[0]])])
-        self.green = np.array([self.image1_coords[2], self.image2_coords[3], np.mean([self.image1_coords[3], self.image2_coords[2]])])
-        self.red = np.array([self.image1_coords[4], self.image2_coords[5], np.mean([self.image1_coords[5], self.image2_coords[4]])])
-        print(self.blue)
+        # If yellow's angle is fixed, so are the coords of yellow and blue
+        self.yellow = np.array([0,0,0])
+        self.blue = np.array([0,0,2])
+        
+        # Calculate green
+        if self.image1_coords[2][0] == 0:
+            self.green = np.array([self.image2_coords[2][0], 0, self.image2_coords[2][1]])
+        if self.image2_coords[2][0] == 0:
+            self.green = np.array([0, self.image1_coords[2][0], self.image1_coords[2][1]])
+        if self.image1_coords[2][0] != 0 and self.image2_coords[2][0] != 0:
+            self.green = np.array([self.image2_coords[2][0], self.image1_coords[1][0], np.mean([self.image1_coords[2][1], self.image2_coords[2][1]])])
+            
+        # Calculate red
+        if self.image1_coords[3][0] == 0:
+            self.red = np.array([self.image2_coords[3][0], self.green[1], self.image2_coords[3][1]])
+        if self.image2_coords[3][0] == 0:
+            self.red = np.array([self.green[0], self.image1_coords[3][0], self.image1_coords[3][1]])
+        if self.image1_coords[3][0] != 0 and self.image2_coords[3][0] != 0:
+            self.red = np.array([self.image2_coords[3][0], self.image1_coords[3][0], np.mean([self.image1_coords[3][1], self.image2_coords[3][1]])])       
         
         # Return 3d coordinates
-        return [self.yellow-self.blue, self.yellow-self.green, self.yellow-self.red]
+        return np.array([self.yellow, self.blue, self.green, self.red])
         
         
     def get_angles(self, image1, image2):
-        # TODO: Check math-- something's not quite right, but idk what
         self.coords = self.get_3d_coords(image1, image2)
-        self.angles = np.array([self.estimate_angle(self.coords[1], self.coords[0], 3.5, 'x'), self.estimate_angle(self.coords[1], self.coords[0], 0, 'y'), self.estimate_angle(self.coords[2], self.coords[1], 3, 'x')])
+        self.angles = np.array([self.estimate_angle(self.coords[2], self.coords[1], 3.5, 'x'), self.estimate_angle(self.coords[2], self.coords[1], 0, 'y'), self.estimate_angle(self.coords[3], self.coords[2], 3, 'x')])
         return self.angles
         
         
     def estimate_angle(self, coord1, coord2, h, axis):
         a = (coord1-coord2)/np.linalg.norm(coord1)
         b = coord2/np.linalg.norm(coord2)
-        est = np.arctan2(a, b)
+        
         if axis == 'x':
-          return least_squares(self.x_fun, [0.0], args = (a,b,h), bounds = (-np.pi/2, np.pi/2)).x
+          try:
+            return least_squares(self.x_fun, [0.0], args = (a,b), bounds = (-np.pi/2, np.pi/2)).x
+          except:
+            return np.array[0.0]
+            
         elif axis == 'y':
-          return least_squares(self.y_fun, [0.0], args = (a,b), bounds = (-np.pi/2, np.pi/2)).x
+          try:
+            return least_squares(self.y_fun, [0.0], args = (a,b), bounds = (-np.pi/2, np.pi/2)).x
+          except:
+            return np.array[0.0]
+            
         else:
           print('axis must be either \'x\' or \'y\'. ')
-          return 0
+          return np.array[0.0]
         
-    def x_fun(self, theta, a, b, h):
+    def x_fun(self, theta, a, b):
         m = np.array([[1,0,0], [0,np.cos(theta),-np.sin(theta)], [0,np.sin(theta),np.cos(theta)]])
         return np.sum(np.abs(m.dot(a) - b))
         
@@ -224,7 +257,7 @@ class image_converter:
         #find target coordinates from img and publish in topic(target_pos) so control.py can use it
         target_pos_pub = rospy.Publisher("/image_processing/target_position", Float64, queue_size=10)
         target_pos = Float64()
-        target_pos.data = self.yellow-self.target
+        target_pos.data = self.target
         target_pos_pub.publish(target_pos)
 
     # Recieve data, process it, and publish
@@ -233,8 +266,10 @@ class image_converter:
         try:
             cv_image1 = self.bridge.imgmsg_to_cv2(image1, "bgr8")
             cv_image2 = self.bridge.imgmsg_to_cv2(image2, "bgr8")
-            imgPath = os.path.join(os.getcwd(), 'template.png')
+            imgPath = os.path.join(os.getcwd(), '/home/tully/catkin_ws/src/ivr_assignment/src/template.png')
+            print('Images loaded!')
             template = cv2.imread(imgPath, 1)
+            #print(template)
             #cv2.imshow('template', template)
             #template = self.bridge.imgmsg_to_cv2(template, "bgr8")
             template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
@@ -247,7 +282,7 @@ class image_converter:
         try:
             self.publish_angles(self.get_angles(cv_image1, cv_image2))
             # Target detection currently prints output as well for debug purposes
-            print(self.detect_target(cv_image1, cv_image2, template))
+            self.detect_target(cv_image1, cv_image2, template)
             self.detect_end_effector_pos()
             
         except CvBridgeError as e:
