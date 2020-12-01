@@ -121,6 +121,8 @@ class image_converter:
         return mask
         
     def detect_target(self, image1, image2, template):
+        a1 = self.pixel2meter(image1)
+        a2 = self.pixel2meter(image2)
         # Notes:
         # Should be correct now!
         # Except that I'm not sure if the coordinates should be scaled to the yellow joint or not, or to the image size, or whatever
@@ -130,12 +132,25 @@ class image_converter:
         masked2 = self.detect_orange(image2)
         matched1 = cv2.matchTemplate(masked1, template, 1)
         matched2 = cv2.matchTemplate(masked2, template, 1)
-        coord1 = cv2.minMaxLoc(matched1)[2]
-        coord2 = cv2.minMaxLoc(matched2)[2]
+        coord1x, coord1y = cv2.minMaxLoc(matched1)[2]
+        coord2x, coord2y = cv2.minMaxLoc(matched2)[2]
+        
+        # Scale to images
+        center1 = self.detect_yellow(image1) * a1
+        center2 = self.detect_yellow(image2) * a2
+        coords1 = np.array([coord1x, coord1y])
+        coords2 = np.array([coord2x, coord2y])
+        coords1 = coords1 * a1
+        coords1 = center1 - coords1
+        coords1 = coords1 * np.array([-1,1])
+        coords2 = coords2 * a2
+        coords2 = center2 - coords2
+        coords2 = coords2 * np.array([-1,1])
         
         # Coordinates
-        coords = np.array([coord1, coord2])
+        coords = np.array([coords1, coords2])
         self.target = np.array([coords[1][0], coords[0][0], np.mean([coords[0][1], coords[1][1]])])
+        print(str(self.target))
         
         # Publish results
         self.target_end_effector_pos()
@@ -250,7 +265,7 @@ class image_converter:
         #find end effector coordinates from img and publish in topic(end_effector_pos) so control.py can use it
         robot_end_pos_pub = rospy.Publisher("/image_processing/end_effector_pos", Float64, queue_size=10)
         end_pos = Float64()
-        end_pos.data = self.yellow - self.red
+        end_pos.data = self.red
         robot_end_pos_pub.publish(end_pos)
 
     def target_end_effector_pos(self):
