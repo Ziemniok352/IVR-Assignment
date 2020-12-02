@@ -123,9 +123,6 @@ class image_converter:
     def detect_target(self, image1, image2, template):
         a1 = self.pixel2meter(image1)
         a2 = self.pixel2meter(image2)
-        # Notes:
-        # Should be correct now!
-        # Except that I'm not sure if the coordinates should be scaled to the yellow joint or not, or to the image size, or whatever
                
         # Chamfer matching
         masked1 = self.detect_orange(image1)
@@ -269,12 +266,26 @@ class image_converter:
         robot_end_pos_pub.publish(end_pos)
 
     def target_end_effector_pos(self):
-        #find target coordinates from img and publish in topic(target_pos) so control.py can use it
+        #find target coordinates from img and publish in topic(target_pos_x, _y, and _z) so control.py can use it
+        target_pos_pub_x = rospy.Publisher("/image_processing/target_position_x", Float64, queue_size=10)
+        target_pos = Float64()
+        target_pos.data = self.target[0]
+        target_pos_pub_x.publish(target_pos)
+
+        target_pos_pub_y = rospy.Publisher("/image_processing/target_position_y", Float64, queue_size=10)
+        target_pos.data = self.target[1]
+        target_pos_pub_y.publish(target_pos)
+        
+        target_pos_pub_z = rospy.Publisher("/image_processing/target_position_z", Float64, queue_size=10)
+        target_pos.data = self.target[2]
+        target_pos_pub_z.publish(target_pos)
+        
         target_pos_pub = rospy.Publisher("/image_processing/target_position", Float64, queue_size=10)
         target_pos = Float64()
         target_pos.data = self.target
         target_pos_pub.publish(target_pos)
-
+        
+        
     # Recieve data, process it, and publish
     def callback(self, image1, image2):
         # Recieve the image
