@@ -13,6 +13,7 @@ from geometry_msgs.msg import Point
 from sensor_msgs.msg import Image, JointState
 from std_msgs.msg import Float64MultiArray, Float64
 from cv_bridge import CvBridge, CvBridgeError
+import message_filters
 
 class control:
 
@@ -25,15 +26,21 @@ class control:
         self.robot_joint2_pub = rospy.Publisher("/robot/joint2_position_controller/command", Float64, queue_size=10)
         self.robot_joint3_pub = rospy.Publisher("/robot/joint3_position_controller/command", Float64, queue_size=10)
         self.robot_joint4_pub = rospy.Publisher("/robot/joint4_position_controller/command", Float64, queue_size=10)
+        self.end_effector_x_pub = rospy.Publisher("end_effector_x", Float64, queue_size=10)
+        self.end_effector_y_pub = rospy.Publisher("end_effector_y", Float64, queue_size=10)
+        self.end_effector_z_pub = rospy.Publisher("end_effector_z", Float64, queue_size=10)
+        
         # initialize the bridge between openCV and ROS
         self.bridge = CvBridge()
 
-        #use actual pos for now
-        self.robot_pos_sub = rospy.Subscriber("/robot/joint_states",JointState, self.callback)   
-        self.target_pos_sub = rospy.Subscriber("/target/joint_states",JointState, self.targetCallback)
+        #self.robot_pos_sub = message_filters.Subscriber("joints_pos",Float64MultiArray)# if running with this change position to data in callback
+        self.robot_pos_sub = message_filters.Subscriber("/robot/joint_states",JointState)
+        self.target_pos_sub = message_filters.Subscriber("/target/joint_states",JointState)
+        #self.target_pos_sub = message_filters.Subscriber("/image_processing/target_position",Float64)# if running with this change position to data in callback
+
+        self.ts = message_filters.ApproximateTimeSynchronizer([self.robot_pos_sub, self.target_pos_sub], 1,1)
+        self.ts.registerCallback(self.callback)
         
-        #self.robot_pos_sub = rospy.Subscriber(get from img processing)
-        #self.target_pos_sub = rospy.Subscriber(get from img processing) or directly from target move
         
         # record the begining time
         self.time_trajectory = rospy.get_time()
@@ -46,9 +53,6 @@ class control:
 
         self.target_position = np.array([0.0,0.0,0.0])
 
-    # this gets target coords in right format    
-    def targetCallback(self,data):
-        self.target_position = np.asarray(data.position)
 
     def fk(self, angles):
         theta1 = angles[0] + pi/2
@@ -85,7 +89,7 @@ class control:
                 -3*c2*c3*s4 - 3*c4*s2]])
         return jacobian
 
-    def closed_loop_control(self,position):
+    def closed_loop_control(self,position, target_pos):
         #P gain
         K_p = np.array([[1,0,0],[0,1,0],[0,0,1]])
         #D gain
@@ -98,7 +102,7 @@ class control:
         #robot end-effector position (xyz)
         pos = self.fk(position)
         #desired trajectory
-        pos_d = self.target_position
+        pos_d = target_pos
         #estimate derivative of error
         self.error_d = ((pos_d - pos) - self.error)/dt
         #estimate error
@@ -113,11 +117,12 @@ class control:
         q_d = q + (dt * dq_d)  # control input (angular position of joints)
         return q_d
 
-
-    def callback(self,data):
-        position = data.position
+    def callback(self,pos, target_pos):
+        position = pos.position
+        target_position = target_pos.position
+        print("tgt pos: ", target_position)
         
-        q_d = self.closed_loop_control(position)
+        q_d = self.closed_loop_control(position, target_position)
         #print(q_d)
 
         self.joint1 = Float64()
@@ -134,12 +139,24 @@ class control:
         self.robot_joint2_pub.publish(self.joint2)
         self.robot_joint3_pub.publish(self.joint3)
         self.robot_joint4_pub.publish(self.joint4)
-        print("published")
+        
+        self.end_eff = Float64()
+        self.end_eff_x = Float64()
+        self.end_eff_y = Float64()
+        self.end_eff_z = Float64()
+
+        self.end_eff = self.fk(position)
+        self.end_eff_x.data = self.end_eff[0]
+        self.end_eff_y.data = self.end_eff[1]
+        self.end_eff_z.data = self.end_eff[2]
+
+        self.end_effector_x_pub.publish(self.end_eff_x)
+        self.end_effector_y_pub.publish(self.end_eff_y)
+        self.end_effector_z_pub.publish(self.end_eff_z)
 
 # call class
 def main(args):
     c = control()
-    c.fk([])
     try:
         rospy.spin()
     except KeyboardInterrupt:
