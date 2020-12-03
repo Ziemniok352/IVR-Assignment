@@ -33,7 +33,7 @@ class image_converter:
         self.target_pos = rospy.Publisher(
             "target_pos", Float64MultiArray, queue_size=10)
         self.target_actual_sub = rospy.Subscriber("/target/joint_states",JointState, self.targetCallback)
-
+        self.joint1 = Float64()
 
         # initialize the bridge between openCV and ROS
         self.bridge = CvBridge()
@@ -54,6 +54,11 @@ class image_converter:
             "/image1/joint3_position_estimator", Float64, queue_size=10)
         robot_joint4_est = rospy.Publisher(
             "/image1/joint4_position_estimator", Float64, queue_size=10)
+        robot_joints = rospy.Publisher("joints_pos", Float64MultiArray, queue_size=10)
+
+        allAngles = Float64MultiArray()
+        allAngles.data = [self.joint1, -self.angles[0], -self.angles[1], -self.angles[2]]
+        robot_joints.publish(allAngles)
 
         # Publishes results
         joint2 = Float64()
@@ -70,7 +75,8 @@ class image_converter:
     #this gives actual position of target used for testing
     def targetCallback(self,data):
         self.cords = np.asarray(data.position)
-        print("actual pos: ", self.cords)
+        self.joint1 = self.cords[0]
+        # print("actual pos: ", self.cords)
         target_actual_pub_x = rospy.Publisher("target_position_x", Float64, queue_size=10)
         target_actual = Float64()
         target_actual.data = self.cords[0]
@@ -302,21 +308,26 @@ class image_converter:
             "/image_processing/end_effector_pos", Float64, queue_size=10)
         end_pos = Float64()
         end_pos.data = self.red
+        print("X: {:.3f}, Y: {:.3f}, Z: {:.3f}".format(end_pos.data[0],end_pos.data[1],end_pos.data[2]))
         robot_end_pos_pub.publish(end_pos)
 
     def target_end_effector_pos(self):
+        self.target[0] = self.target[0] + 1.1
+        self.target[1] = self.target[1] + 1.2
+        self.target[2] = self.target[2] - 0.9
+
         #find target coordinates from img and publish in topic(target_pos_x, _y, and _z) so control.py can use it
         target_pos_pub_x = rospy.Publisher("/image_processing/target_position_x", Float64, queue_size=10)
         target_pos = Float64()
-        target_pos.data = self.target[0] + 1.1
+        target_pos.data = self.target[0]
         target_pos_pub_x.publish(target_pos)
 
         target_pos_pub_y = rospy.Publisher("/image_processing/target_position_y", Float64, queue_size=10)
-        target_pos.data = self.target[1] + 1.2
+        target_pos.data = self.target[1]
         target_pos_pub_y.publish(target_pos)
         
         target_pos_pub_z = rospy.Publisher("/image_processing/target_position_z", Float64, queue_size=10)
-        target_pos.data = self.target[2] - 0.9
+        target_pos.data = self.target[2]
         target_pos_pub_z.publish(target_pos)
         
         target_pos_pub = rospy.Publisher("/image_processing/target_position", Float64MultiArray, queue_size=10)
@@ -331,7 +342,7 @@ class image_converter:
             cv_image1 = self.bridge.imgmsg_to_cv2(image1, "bgr8")
             cv_image2 = self.bridge.imgmsg_to_cv2(image2, "bgr8")
             imgPath = os.path.join(os.getcwd(), 'template.png')
-            print('Images loaded!')
+            # print('Images loaded!')
             template = cv2.imread(imgPath, 1)
             # print(template)
             #cv2.imshow('template', template)

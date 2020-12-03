@@ -33,12 +33,12 @@ class control:
         # initialize the bridge between openCV and ROS
         self.bridge = CvBridge()
 
-        #self.robot_pos_sub = message_filters.Subscriber("joints_pos",Float64MultiArray)# if running with this change position to data in callback
-        self.robot_pos_sub = message_filters.Subscriber("/robot/joint_states",JointState)
-        self.target_pos_sub = message_filters.Subscriber("/target/joint_states",JointState)
-        #self.target_pos_sub = message_filters.Subscriber("/image_processing/target_position",Float64)# if running with this change position to data in callback
+        self.robot_pos_sub = message_filters.Subscriber("joints_pos",Float64MultiArray)# if running with this change position to data in callback
+        #self.robot_pos_sub = message_filters.Subscriber("/robot/joint_states",JointState)
+        #self.target_pos_sub = message_filters.Subscriber("/target/joint_states",JointState)
+        self.target_pos_sub = message_filters.Subscriber("/image_processing/target_position",Float64MultiArray)# if running with this change position to data in callback
 
-        self.ts = message_filters.ApproximateTimeSynchronizer([self.robot_pos_sub, self.target_pos_sub], 1,1)
+        self.ts = message_filters.ApproximateTimeSynchronizer([self.robot_pos_sub, self.target_pos_sub], 1,1, allow_headerless=True)
         self.ts.registerCallback(self.callback)
         
         
@@ -91,9 +91,9 @@ class control:
 
     def closed_loop_control(self,position, target_pos):
         #P gain
-        K_p = np.array([[1,0,0],[0,1,0],[0,0,1]])
+        K_p = np.array([[2,0,0],[0,2,0],[0,0,2]])
         #D gain
-        K_d = np.array([[0.1,0,0],[0,0.1,0],[0,0,0.1]])
+        K_d = np.array([[0.2,0,0],[0,0.2,0],[0,0,0.2]])
         #estimate time step
         cur_time = np.array([rospy.get_time()])
         dt = cur_time - self.time_previous_step
@@ -118,9 +118,9 @@ class control:
         return q_d
 
     def callback(self,pos, target_pos):
-        position = pos.position
-        target_position = target_pos.position
-        print("tgt pos: ", target_position)
+        position = pos.data
+        target_position = target_pos.data
+        #print("tgt pos: ", target_position)
         
         q_d = self.closed_loop_control(position, target_position)
         #print(q_d)
@@ -146,6 +146,7 @@ class control:
         self.end_eff_z = Float64()
 
         self.end_eff = self.fk(position)
+        print(self.end_eff)
         self.end_eff_x.data = self.end_eff[0]
         self.end_eff_y.data = self.end_eff[1]
         self.end_eff_z.data = self.end_eff[2]
