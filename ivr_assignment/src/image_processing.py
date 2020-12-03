@@ -156,7 +156,8 @@ class image_converter:
         mask = cv2.inRange(image, (0, 40, 100), (100, 100, 255))
         return mask
 
-    def detect_target(self, image1, image2, template):
+    def detect_target(self, image1, image2, template, version=1):
+    # Use version 1 to detect sphere, version 2 to detect box
         a1 = self.pixel2meter(image1)
         a2 = self.pixel2meter(image2)
         # Notes:
@@ -184,17 +185,21 @@ class image_converter:
         coords2 = coords2 * np.array([-1, 1])
 
         # Coordinates
-        coords = np.array([coords1, coords2])
-        self.target = np.array(
-            [coords[1][0], coords[0][0], np.mean([coords[0][1], coords[1][1]])])
-        print(str(self.target))
-
-        # Publish results
-        self.target_end_effector_pos()
+        if version == 1:
+            coords = np.array([coords1, coords2])
+            self.target = np.array([coords[1][0], coords[0][0], np.mean([coords[0][1], coords[1][1]])])
+            #print('sphere: ' + str(self.target))
+            # Publish results
+            self.target_end_effector_pos()
+            
+        elif version == 2:
+            coords = np.array([coords1, coords2])
+            self.box = np.array([coords[1][0], coords[0][0], np.mean([coords[0][1], coords[1][1]])])
+            #print('box:', str(self.box))
+            self.publish_box_pos()
         return self.target
 
     # Calculate the conversion from pixel to meter
-
     def pixel2meter(self, image):
         # Obtain the centre of each coloured blob
         circle1Pos = self.detect_yellow(image)
@@ -203,7 +208,6 @@ class image_converter:
         return 2.5 / np.sqrt(dist)
 
     # Calculate the relevant joint vectors from the image
-
     def detect_joint_locations(self, image):
         a = self.pixel2meter(image)
 
@@ -334,6 +338,29 @@ class image_converter:
         target_pos = Float64MultiArray()
         target_pos.data = self.target #add values to this aswell somehow?
         target_pos_pub.publish(target_pos)
+        
+    def publish_box_pos(self):
+        #find target coordinates from img and publish in topic(target_pos_x, _y, and _z) so control.py can use it
+        box_pos_pub_x = rospy.Publisher("/image_processing/box_position_x", Float64, queue_size=10)
+        box_pos = Float64()
+        box_pos.data = self.box[0]
+        box_pos_pub_x.publish(box_pos)
+
+        box_pos_pub_y = rospy.Publisher("/image_processing/box_position_y", Float64, queue_size=10)
+        box_pos = Float64()
+        box_pos.data = self.box[1]
+        box_pos_pub_y.publish(box_pos)
+        
+        box_pos_pub_z = rospy.Publisher("/image_processing/box_position_z", Float64, queue_size=10)
+        box_pos = Float64()
+        box_pos.data = self.box[2]
+        box_pos_pub_z.publish(box_pos)
+        
+        box_pos_pub = rospy.Publisher("/image_processing/box_position", Float64, queue_size=10)
+        box_pos = Float64()
+        box_pos.data = self.box
+        box_pos_pub.publish(box_pos)      
+        
 
     # Recieve data, process it, and publish
     def callback(self, image1, image2):
@@ -344,10 +371,11 @@ class image_converter:
             imgPath = os.path.join(os.getcwd(), 'template.png')
             # print('Images loaded!')
             template = cv2.imread(imgPath, 1)
-            # print(template)
-            #cv2.imshow('template', template)
-            #template = self.bridge.imgmsg_to_cv2(template, "bgr8")
             template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+            imgPath2 = os.path.join(os.getcwd(), 'template2.png')
+            # print('Images loaded!')
+            template2 = cv2.imread(imgPath, 1)
+            template2 = cv2.cvtColor(template2, cv2.COLOR_BGR2GRAY)
         except CvBridgeError as e:
             print(e)
 
@@ -358,6 +386,7 @@ class image_converter:
             self.publish_angles(self.get_angles(cv_image1, cv_image2))
             # Target detection currently prints output as well for debug purposes
             self.detect_target(cv_image1, cv_image2, template)
+            self.detect_target(cv_image1, cv_image2, template2)
             self.detect_end_effector_pos()
 
         except CvBridgeError as e:
@@ -378,3 +407,4 @@ def main():
 # run the code if the node is called
 if __name__ == '__main__':
     main()
+
