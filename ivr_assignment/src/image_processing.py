@@ -386,7 +386,7 @@ class image_converter:
             self.publish_angles(self.get_angles(cv_image1, cv_image2))
             # Target detection currently prints output as well for debug purposes
             self.detect_target(cv_image1, cv_image2, template)
-            self.detect_target(cv_image1, cv_image2, template2)
+            self.detect_target(cv_image1, cv_image2, template2, version=2)
             self.detect_end_effector_pos()
 
         except CvBridgeError as e:
