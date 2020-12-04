@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 
 import roslib
+#!/usr/bin/env python3
+
+import roslib
 import sys
 import rospy
 import cv2
@@ -73,7 +76,7 @@ def move():
 def main(args):
   ic = image_converter()
   try:
-    move()
+    #move()
     rospy.spin()
   except KeyboardInterrupt:
     print("Shutting down")
@@ -82,5 +85,3 @@ def main(args):
 # run the code if the node is called
 if __name__ == '__main__':
     main(sys.argv)
-
-

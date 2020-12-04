@@ -32,7 +32,8 @@ class image_converter:
         # initialize a publisher to send target position to a topic called target_pos
         self.target_pos = rospy.Publisher(
             "target_pos", Float64MultiArray, queue_size=10)
-        self.target_actual_sub = rospy.Subscriber("/target/joint_states",JointState, self.targetCallback)
+        self.target_actual_sub = rospy.Subscriber(
+            "/target2/joint_states", JointState, self.targetCallback)
         self.joint1 = Float64()
 
         # initialize the bridge between openCV and ROS
@@ -54,10 +55,12 @@ class image_converter:
             "/image1/joint3_position_estimator", Float64, queue_size=10)
         robot_joint4_est = rospy.Publisher(
             "/image1/joint4_position_estimator", Float64, queue_size=10)
-        robot_joints = rospy.Publisher("joints_pos", Float64MultiArray, queue_size=10)
+        robot_joints = rospy.Publisher(
+            "joints_pos", Float64MultiArray, queue_size=10)
 
         allAngles = Float64MultiArray()
-        allAngles.data = [self.joint1, -self.angles[0], -self.angles[1], -self.angles[2]]
+        allAngles.data = [self.joint1, -self.angles[0], -
+                          self.angles[1], -self.angles[2]]
         robot_joints.publish(allAngles)
 
         # Publishes results
@@ -72,22 +75,25 @@ class image_converter:
         robot_joint4_est.publish(joint4)
         #print(joint2, joint3, joint4)
 
-    #this gives actual position of target used for testing
-    def targetCallback(self,data):
+    # this gives actual position of target or box used for testing
+    def targetCallback(self, data):
         self.cords = np.asarray(data.position)
         self.joint1 = self.cords[0]
         # print("actual pos: ", self.cords)
-        target_actual_pub_x = rospy.Publisher("target_position_x", Float64, queue_size=10)
+        target_actual_pub_x = rospy.Publisher(
+            "target_position_x", Float64, queue_size=10)
         target_actual = Float64()
         target_actual.data = self.cords[0]
         target_actual_pub_x.publish(target_actual)
-        
-        target_actual_pub_y = rospy.Publisher("target_position_y", Float64, queue_size=10)
+
+        target_actual_pub_y = rospy.Publisher(
+            "target_position_y", Float64, queue_size=10)
         target_actual = Float64()
         target_actual.data = self.cords[1]
         target_actual_pub_y.publish(target_actual)
-        
-        target_actual_pub_z = rospy.Publisher("target_position_z", Float64, queue_size=10)
+
+        target_actual_pub_z = rospy.Publisher(
+            "target_position_z", Float64, queue_size=10)
         target_actual = Float64()
         target_actual.data = self.cords[2]
         target_actual_pub_z.publish(target_actual)
@@ -157,7 +163,7 @@ class image_converter:
         return mask
 
     def detect_target(self, image1, image2, template, version=1):
-    # Use version 1 to detect sphere, version 2 to detect box
+        # Use version 1 to detect sphere, version 2 to detect box
         a1 = self.pixel2meter(image1)
         a2 = self.pixel2meter(image2)
         # Notes:
@@ -187,14 +193,16 @@ class image_converter:
         # Coordinates
         if version == 1:
             coords = np.array([coords1, coords2])
-            self.target = np.array([coords[1][0], coords[0][0], np.mean([coords[0][1], coords[1][1]])])
+            self.target = np.array(
+                [coords[1][0], coords[0][0], np.mean([coords[0][1], coords[1][1]])])
             #print('sphere: ' + str(self.target))
             # Publish results
             self.target_end_effector_pos()
-            
+
         elif version == 2:
             coords = np.array([coords1, coords2])
-            self.box = np.array([coords[1][0], coords[0][0], np.mean([coords[0][1], coords[1][1]])])
+            self.box = np.array(
+                [coords[1][0], coords[0][0], np.mean([coords[0][1], coords[1][1]])])
             #print('box:', str(self.box))
             self.publish_box_pos()
         return self.target
@@ -312,7 +320,7 @@ class image_converter:
             "/image_processing/end_effector_pos", Float64, queue_size=10)
         end_pos = Float64()
         end_pos.data = self.red
-        print("X: {:.3f}, Y: {:.3f}, Z: {:.3f}".format(end_pos.data[0],end_pos.data[1],end_pos.data[2]))
+        #print("X: {:.3f}, Y: {:.3f}, Z: {:.3f}".format(end_pos.data[0], end_pos.data[1], end_pos.data[2]))
         robot_end_pos_pub.publish(end_pos)
 
     def target_end_effector_pos(self):
@@ -320,49 +328,57 @@ class image_converter:
         self.target[1] = self.target[1] + 1.2
         self.target[2] = self.target[2] - 0.9
 
-        #find target coordinates from img and publish in topic(target_pos_x, _y, and _z) so control.py can use it
-        target_pos_pub_x = rospy.Publisher("/image_processing/target_position_x", Float64, queue_size=10)
+        # find target coordinates from img and publish in topic(target_pos_x, _y, and _z) so control.py can use it
+        target_pos_pub_x = rospy.Publisher(
+            "/image_processing/target_position_x", Float64, queue_size=10)
         target_pos = Float64()
         target_pos.data = self.target[0]
         target_pos_pub_x.publish(target_pos)
 
-        target_pos_pub_y = rospy.Publisher("/image_processing/target_position_y", Float64, queue_size=10)
+        target_pos_pub_y = rospy.Publisher(
+            "/image_processing/target_position_y", Float64, queue_size=10)
         target_pos.data = self.target[1]
         target_pos_pub_y.publish(target_pos)
-        
-        target_pos_pub_z = rospy.Publisher("/image_processing/target_position_z", Float64, queue_size=10)
+
+        target_pos_pub_z = rospy.Publisher(
+            "/image_processing/target_position_z", Float64, queue_size=10)
         target_pos.data = self.target[2]
         target_pos_pub_z.publish(target_pos)
-        
-        target_pos_pub = rospy.Publisher("/image_processing/target_position", Float64MultiArray, queue_size=10)
+
+        target_pos_pub = rospy.Publisher(
+            "/image_processing/target_position", Float64MultiArray, queue_size=10)
         target_pos = Float64MultiArray()
-        target_pos.data = self.target #add values to this aswell somehow?
+        target_pos.data = self.target
         target_pos_pub.publish(target_pos)
-        
+
     def publish_box_pos(self):
-        #find target coordinates from img and publish in topic(target_pos_x, _y, and _z) so control.py can use it
-        box_pos_pub_x = rospy.Publisher("/image_processing/box_position_x", Float64, queue_size=10)
+        # find target coordinates from img and publish in topic(target_pos_x, _y, and _z) so control.py can use it
+        box_pos_pub_x = rospy.Publisher(
+            "/image_processing/box_position_x", Float64, queue_size=10)
         box_pos = Float64()
         box_pos.data = self.box[0]
         box_pos_pub_x.publish(box_pos)
 
-        box_pos_pub_y = rospy.Publisher("/image_processing/box_position_y", Float64, queue_size=10)
+        box_pos_pub_y = rospy.Publisher(
+            "/image_processing/box_position_y", Float64, queue_size=10)
         box_pos = Float64()
         box_pos.data = self.box[1]
         box_pos_pub_y.publish(box_pos)
-        
-        box_pos_pub_z = rospy.Publisher("/image_processing/box_position_z", Float64, queue_size=10)
+
+        box_pos_pub_z = rospy.Publisher(
+            "/image_processing/box_position_z", Float64, queue_size=10)
         box_pos = Float64()
         box_pos.data = self.box[2]
         box_pos_pub_z.publish(box_pos)
-        
-        box_pos_pub = rospy.Publisher("/image_processing/box_position", Float64, queue_size=10)
+
+        box_pos_pub = rospy.Publisher(
+            "/image_processing/box_position", Float64, queue_size=10)
         box_pos = Float64()
         box_pos.data = self.box
-        box_pos_pub.publish(box_pos)      
-        
+        box_pos_pub.publish(box_pos)
 
     # Recieve data, process it, and publish
+
     def callback(self, image1, image2):
         # Recieve the image
         try:
@@ -407,4 +423,3 @@ def main():
 # run the code if the node is called
 if __name__ == '__main__':
     main()
-

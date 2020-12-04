@@ -146,7 +146,7 @@ class control:
         self.end_eff_z = Float64()
 
         self.end_eff = self.fk(position)
-        print(self.end_eff)
+        #print(self.end_eff)
         self.end_eff_x.data = self.end_eff[0]
         self.end_eff_y.data = self.end_eff[1]
         self.end_eff_z.data = self.end_eff[2]
